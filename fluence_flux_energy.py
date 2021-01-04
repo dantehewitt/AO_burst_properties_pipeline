@@ -12,17 +12,89 @@ from presto import psrfits
 import pandas as pd
 import import_fil_fits
 
+#hardcoded fit values for SEFD at different frequencies
+popt1155=np.array([  0.02744894,   1.11956666,   2.56991623, -16.95838086, 4.52554854])
+popt1310=np.array([  0.03635505,   1.13631723,   2.14199018, -12.78659945, 3.63049544])
+popt1375=np.array([  0.03035996,   1.15606075,   2.03391971, -12.01735757, 3.50332863])
+popt1415=np.array([  0.18230778,   1.11305479,   2.90374053, -36.41706102, 3.36719088])
+popt1550=np.array([  0.03052548,   1.15298379,   2.20894805, -15.13983849, 3.31135101])
+popt1610=np.array([  0.12903002,   1.13016458,   3.19272939, -41.49687011, 3.21341672])
+popt1666=np.array([ 1.30414741e-02,  1.16920252e+00,  2.57425057e+00, -1.92565818e+01, 3.19924629e+00])
 
-def radiometer(tsamp, bw, npol, SEFD):
+frqs=[1155,1310,1375,1415,1550,1610,1666]
+
+#exponential function, other options might be better, but this is sufficient for our purposes
+#this likely *very* slightly underestimates SEFD at low za an overestimates at high za
+def func(x, a, b, c, d, e):
+
+    return  a*b**(c*x+d)+e
+
+#endless elifs
+def SEFD(za, cf):
+    """
+    za is the zenith angle
+    cf is the central frequency in MHz, has to be in (1155,1310,1375,1415,1550,1610,1666)
+    """
+    if cf==1155:
+        SEFD=np.round(func(za,*popt1155),2)
+    elif cf==1310:
+        SEFD=np.round(func(za,*popt1310),2)
+    elif cf==1375:
+        SEFD=np.round(func(za,*popt1375),2)
+    elif cf==1415:
+        SEFD=np.round(func(za,*popt1415),2)
+    elif cf==1550:
+        SEFD=np.round(func(za,*popt1550),2)
+    elif cf==1610:
+        SEFD=np.round(func(za,*popt1610),2)
+    elif cf==1666:
+        SEFD=np.round(func(za,*popt1666),2)
+    else:
+        print("Incorrect central frequency provided. Choose from 1155, 1310, 1375, 1415, 1550, 1610, 1666 MHz")
+    return SEFD
+
+def get_SEFD(za,give_freq):
+    """
+    za is the zenith angle
+    give_freq is the central frequency in MHz from fit
+    """
+    #find the nearest frequencies with data surrounding the given freq
+    
+    if za<2 or za>20:
+        print("check ZA, out of range, errors on SEFD will likely be large")
+    nearest_frq1=min(frqs, key=lambda x:abs(x-give_freq))
+    if give_freq>nearest_frq1 and give_freq<1666:
+        nearest_frq2=frqs[frqs.index(nearest_frq1)+1]
+    elif give_freq<nearest_frq1 and give_freq>1155:
+        nearest_frq2=frqs[frqs.index(nearest_frq1)-1]
+    elif give_freq>1666:
+        print('invalid freq, too high, using 1666 MHz')
+        return SEFD(za,1666)
+    elif give_freq<1155:
+        print('invalid freq, too low, using 1155 MHz')
+        return SEFD(za,1155)
+        
+
+    #interpolates a SEFD
+    wt1=np.linalg.norm(give_freq-nearest_frq1)/np.linalg.norm(nearest_frq1-nearest_frq2)
+    wt2=np.linalg.norm(give_freq-nearest_frq2)/np.linalg.norm(nearest_frq1-nearest_frq2)
+    vall=np.average([SEFD(za,nearest_frq1),SEFD(za,nearest_frq2)],weights=[wt2,wt1])
+    
+    return vall
+  
+
+def radiometer(tsamp, bw, npol, cntr_freq,za):
     """
     radiometer(tsamp, bw, npol, Tsys, G):
     tsamp is the time resolution in milliseconds
     bw is the bandwidth in MHz
     npol is the number of polarizations
+    cntr_freq is the center frequency of the Gaussian fit in MHz
+    za is the zenith angle
     Tsys is the system temperature in K (typical value for Effelsberg = 20K)
     G is the telescope gain in K/Jy (typical value for Effelsberg = 1.54K/Jy)
     """
-
+    SEFD=get_SEFD(cntr_freq,za)
     return (SEFD) * (1 / np.sqrt((bw * 1.e6) * npol * tsamp * 1e-3))
 
 
